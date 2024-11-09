@@ -631,7 +631,8 @@ function wut_update_widget_usage_on_save( $post_id ) {
 
             // Handle nested widgets.
             if ( isset( $widget['elements'] ) && is_array( $widget['elements'] ) ) {
-                $widgets = array_merge( $widgets, wut_get_nested_widgets( $widget['elements'] ) );
+                $nested = wut_count_nested_widgets( $widget['elements'], $widget['widgetType'], $post_id );
+                $widgets = array_merge( $widgets, $nested['post_ids'] );
             }
         }
     }
@@ -686,6 +687,32 @@ function wut_update_widget_usage_on_save( $post_id ) {
     }
 }
 add_action( 'save_post', 'wut_update_widget_usage_on_save' );
+
+/**
+ * Recursively retrieves widget types from nested Elementor elements.
+ *
+ * @param array $elements The nested elements to search.
+ * @return array The list of widget types found within the elements.
+ *
+ * @since 1.0.0
+ */
+function wut_get_nested_widgets( $elements ) {
+    $widgets = [];
+
+    foreach ( $elements as $element ) {
+        // Check if the element is a widget and has a 'widgetType'.
+        if ( isset( $element['widgetType'] ) ) {
+            $widgets[] = $element['widgetType'];
+        }
+
+        // If the element has nested elements, recursively retrieve their widget types.
+        if ( isset( $element['elements'] ) && is_array( $element['elements'] ) ) {
+            $widgets = array_merge( $widgets, wut_get_nested_widgets( $element['elements'] ) );
+        }
+    }
+
+    return $widgets;
+}
 
 /**
  * Retrieves the total usage count for a widget by querying the posts table.
