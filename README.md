@@ -6,6 +6,8 @@
 
 - [Features](#features)
 - [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+  - [Steps](#steps)
 - [Dependencies](#dependencies)
 - [Usage](#usage)
 - [Frequently Asked Questions](#frequently-asked-questions)
@@ -20,6 +22,7 @@
 - **User-Friendly Interface:** Intuitive admin interface with sortable tables and interactive modals for easy navigation.
 - **Automatic Updates:** Integrated update checker ensures your plugin stays up-to-date with the latest features and security patches.
 - **Localization Ready:** Fully translatable, allowing you to use the plugin in your preferred language.
+- **Database Optimization:** Efficiently stores widget usage data in custom tables for quick access and minimal performance impact.
 
 ## Installation
 
@@ -27,6 +30,49 @@
 
 - **WordPress:** Version 5.0 or higher.
 - **Elementor:** Version 2.0 or higher.
+
+### Steps
+
+1. **Download the Plugin:**
+
+    - Clone the repository:
+
+        ```bash
+        git clone https://github.com/robertdevore/widget-usage-tracker-for-elementor.git
+        ```
+
+    - Or download the ZIP file from the [GitHub repository](https://github.com/robertdevore/widget-usage-tracker-for-elementor/).
+
+2. **Upload to WordPress:**
+
+    - **Via FTP:**
+        - Upload the `widget-usage-tracker-for-elementor` folder to the `/wp-content/plugins/` directory.
+    - **Or Via the WordPress Admin Dashboard:**
+        - Navigate to **Plugins > Add New**.
+        - Click on **Upload Plugin**.
+        - Choose the downloaded ZIP file and click **Install Now**.
+
+3. **Install Dependencies:**
+
+    - This plugin uses Composer to manage dependencies. Ensure you have [Composer](https://getcomposer.org/) installed.
+    - Navigate to the plugin directory and install dependencies:
+
+        ```bash
+        cd wp-content/plugins/widget-usage-tracker-for-elementor
+        composer install
+        ```
+
+4. **Activate the Plugin:**
+
+    - Go to **Plugins > Installed Plugins** in your WordPress dashboard.
+    - Locate **Widget Usage Tracker for Elementor** and click **Activate**.
+
+5. **Initial Setup:**
+
+    - Upon activation, the plugin will create two custom database tables:
+        - `wut_widget_usage_counts`: Stores the usage count for each widget.
+        - `wut_widget_usage_posts`: Stores the association between widgets and post IDs where they are used.
+    - A scheduled cron event will be set up to update widget usage counts hourly. The plugin also triggers an immediate update upon activation.
 
 ## Dependencies
 
@@ -54,54 +100,23 @@ If you prefer to use **Elementor Pro** for additional features:
 4. Activate it through the **Plugins** menu in WordPress.
 5. Enter your license key to receive updates and support.
 
-### Steps
-
-1. **Download the Plugin:**
-
-    - Clone the repository:
-
-        ```
-        git clone https://github.com/robertdevore/widget-usage-tracker-for-elementor.git
-        ```
-
-    - Or download the ZIP file from the [GitHub repository](https://github.com/robertdevore/widget-usage-tracker-for-elementor/).
-2. **Upload to WordPress:**
-
-    - Via FTP:
-        - Upload the `widget-usage-tracker-for-elementor` folder to the `/wp-content/plugins/` directory.
-    - Or via the WordPress Admin Dashboard:
-        - Navigate to **Plugins > Add New**.
-        - Click on **Upload Plugin**.
-        - Choose the downloaded ZIP file and click **Install Now**.
-3. **Install Dependencies:**
-
-    - This plugin uses Composer to manage dependencies. Ensure you have [Composer](https://getcomposer.org/) installed.
-    - Navigate to the plugin directory and install dependencies:
-
-        ```
-        cd wp-content/plugins/widget-usage-tracker-for-elementor
-        composer install
-        ```
-
-4. **Activate the Plugin:**
-
-    - Go to **Plugins > Installed Plugins** in your WordPress dashboard.
-    - Locate **Widget Usage Tracker for Elementor** and click **Activate**.
-
 ## Usage
 
 1. **Accessing the Tracker:**
 
-    - After activation, navigate to **Dashboard > Widget Usage** in your WordPress admin menu.
+    - After activation, navigate to **Dashboard > Widget Tracker** in your WordPress admin menu.
+
 2. **Viewing Widget Usage:**
 
     - The main page displays a table listing all registered Elementor widgets along with their usage counts.
     - Click on the **View Details** link for any widget to open a modal that shows the specific pages or posts where the widget is used.
+
 3. **Understanding the Data:**
 
     - **Widget Type:** The name of the Elementor widget.
     - **Usage Count:** The number of times the widget is used across the site.
     - **Details:** A link to view detailed information about where the widget is used.
+
 4. **Interacting with the Modal:**
 
     - The modal provides a list of pages or posts containing the selected widget.
@@ -121,6 +136,10 @@ Yes, the plugin follows WordPress coding standards and best practices to ensure 
 
 Absolutely! The plugin is open-source and fully customizable. Feel free to fork the repository and modify it to suit your specific needs.
 
+### What happens when I uninstall the plugin?
+
+Upon uninstallation, the plugin will clean up by removing its custom database tables (`wut_widget_usage_counts` and `wut_widget_usage_posts`) and clearing any scheduled cron events related to widget usage tracking.
+
 ## Contributing
 
 Contributions are welcome! Whether it's reporting a bug, suggesting a feature, or submitting a pull request, your input is valuable.
@@ -128,18 +147,20 @@ Contributions are welcome! Whether it's reporting a bug, suggesting a feature, o
 1. **Fork the Repository:**
 
     - Click on the **Fork** button at the top right of the repository page.
+
 2. **Create a Branch:**
-    
-    ```
+
+    ```bash
     git checkout -b feature/your-feature-name
     ```
 
 3. **Make Your Changes:**
 
     - Commit your changes with clear and concise messages.
+
 4. **Push to Your Fork:**
-    
-    ```
+
+    ```bash
     git push origin feature/your-feature-name
     ```
 
