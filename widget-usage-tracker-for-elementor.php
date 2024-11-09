@@ -55,8 +55,7 @@ add_action( 'plugins_loaded', 'wut_check_elementor_dependency' );
 /**
  * Admin Notice for Missing Elementor Dependency.
  * 
- * @since  1.0.0
- * @return void
+ * @since 1.0.0
  */
 function wut_elementor_dependency_notice() {
     ?>
@@ -66,14 +65,52 @@ function wut_elementor_dependency_notice() {
     <?php
 }
 
-// Plugin Update Checker.
+/**
+ * Create custom tables to store widget usage data.
+ *
+ * @since 1.0.0
+ */
+function wut_create_custom_tables() {
+    global $wpdb;
+    $charset_collate = $wpdb->get_charset_collate();
+
+    // Table for total usage counts.
+    $counts_table = $wpdb->prefix . 'wut_widget_usage_counts';
+    $counts_sql = "CREATE TABLE $counts_table (
+        id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+        widget_name VARCHAR(255) NOT NULL,
+        count BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+        PRIMARY KEY  (id),
+        UNIQUE KEY widget_name (widget_name)
+    ) $charset_collate;";
+
+    // Table for per-post usage data.
+    $posts_table = $wpdb->prefix . 'wut_widget_usage_posts';
+    $posts_sql = "CREATE TABLE $posts_table (
+        id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+        widget_name VARCHAR(255) NOT NULL,
+        post_id BIGINT(20) UNSIGNED NOT NULL,
+        PRIMARY KEY  (id),
+        KEY widget_name (widget_name),
+        KEY post_id (post_id)
+    ) $charset_collate;";
+
+    require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+    dbDelta( $counts_sql );
+    dbDelta( $posts_sql );
+}
+register_activation_hook( __FILE__, 'wut_create_custom_tables' );
+
+/**
+ * Plugin Update Checker.
+ */
 require 'vendor/plugin-update-checker/plugin-update-checker.php';
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 $myUpdateChecker = PucFactory::buildUpdateChecker(
-	'https://github.com/robertdevore/widget-usage-tracker-for-elementor/',
-	__FILE__,
-	'widget-usage-tracker-for-elementor'
+    'https://github.com/robertdevore/widget-usage-tracker-for-elementor/',
+    __FILE__,
+    'widget-usage-tracker-for-elementor'
 );
 
 // Set the branch that contains the stable release.
@@ -99,8 +136,7 @@ class Elementor_Widget_Usage_List_Table extends WP_List_Table {
     /**
      * Constructor for Elementor_Widget_Usage_List_Table.
      * 
-     * @since  1.0.0
-     * @return void
+     * @since 1.0.0
      */
     public function __construct() {
         parent::__construct(
@@ -115,8 +151,7 @@ class Elementor_Widget_Usage_List_Table extends WP_List_Table {
     /**
      * Prepares the table items.
      * 
-     * @since  1.0.0
-     * @return void
+     * @since 1.0.0
      */
     public function prepare_items() {
         $this->widget_data = $this->get_widget_data();
@@ -130,8 +165,7 @@ class Elementor_Widget_Usage_List_Table extends WP_List_Table {
     /**
      * Defines the table columns.
      *
-     * @since  1.0.0
-     * @return array Column headers for the table.
+     * @since 1.0.0
      */
     public function get_columns() {
         return [
@@ -147,19 +181,18 @@ class Elementor_Widget_Usage_List_Table extends WP_List_Table {
      * @param array  $item        The current item.
      * @param string $column_name The name of the column.
      * 
-     * @since  1.0.0
-     * @return string The content for the column.
+     * @since 1.0.0
      */
     public function column_default( $item, $column_name ) {
         switch ( $column_name ) {
             case 'name':
-                return esc_html( $item[ $column_name ] );
+                return esc_html( $item['widget_name'] );
             case 'count':
-                return esc_html( $item[ $column_name ] );
+                return esc_html( $item['count'] );
             case 'details':
                 return sprintf(
                     '<a href="#" class="view-details" data-widget-name="%s">%s</a>',
-                    esc_attr( $item['name'] ),
+                    esc_attr( $item['widget_name'] ),
                     esc_html__( 'View Details', 'widget-usage-tracker-for-elementor' )
                 );
             default:
@@ -170,149 +203,71 @@ class Elementor_Widget_Usage_List_Table extends WP_List_Table {
     /**
      * Retrieves data for all registered Elementor widgets with usage count greater than zero.
      *
-     * @since  1.0.0
-     * @return array List of widgets with usage details.
+     * @since 1.0.0
      */
     private function get_widget_data() {
         if ( ! did_action( 'elementor/loaded' ) ) {
             return [];
         }
 
-        $widgets_manager = \Elementor\Plugin::instance()->widgets_manager;
-        $widgets         = $widgets_manager->get_widget_types();
-
-        $widget_data = [];
-
-        // Loop through the registered widgets.
-        foreach ( $widgets as $widget_name => $widget_instance ) {
-            $count = $this->count_widget_usage( $widget_instance->get_name() );
-            if ( $count > 0 ) {
-                $widget_data[] = [
-                    'name'  => $widget_instance->get_name(),
-                    'count' => $count,
-                ];
-            }
-        }
-
-        return $widget_data;
-    }
-
-    /**
-     * Counts the total usage of a specific Elementor widget across all published posts.
-     *
-     * @param string $widget_name The name of the widget to count.
-     * 
-     * @since  1.0.0
-     * @return int The total number of times the widget is used.
-     */
-    private function count_widget_usage( $widget_name ) {
         global $wpdb;
+        $counts_table = $wpdb->prefix . 'wut_widget_usage_counts';
 
-        // Fetch all published post IDs that have Elementor data.
-        $post_ids = $wpdb->get_col(
-            $wpdb->prepare(
-                "SELECT p.ID FROM {$wpdb->prefix}posts p
-                 JOIN {$wpdb->prefix}postmeta pm ON p.ID = pm.post_id
-                 WHERE pm.meta_key = '_elementor_data' 
-                 AND p.post_status = 'publish'"
-            )
+        // Fetch all widgets with count > 0.
+        $results = $wpdb->get_results(
+            "SELECT widget_name, count FROM $counts_table WHERE count > 0",
+            ARRAY_A
         );
 
-        $total_count = 0;
-
-        foreach ( $post_ids as $post_id ) {
-            $elementor_data = get_post_meta( $post_id, '_elementor_data', true );
-
-            if ( ! empty( $elementor_data ) ) {
-                $data = json_decode( $elementor_data, true );
-
-                if ( is_array( $data ) ) {
-                    foreach ( $data as $widget ) {
-                        if ( isset( $widget['widgetType'] ) && $widget['widgetType'] === $widget_name ) {
-                            $total_count++;
-                        }
-
-                        // Recursively check for nested widgets (e.g., within sections or columns).
-                        if ( isset( $widget['elements'] ) && is_array( $widget['elements'] ) ) {
-                            $total_count += $this->count_nested_widgets( $widget['elements'], $widget_name );
-                        }
-                    }
-                }
-            }
-        }
-
-        return $total_count;
-    }
-
-    /**
-     * Recursively counts widget instances in nested elements.
-     *
-     * @param array  $elements    The nested elements to search.
-     * @param string $widget_name The name of the widget to count.
-     *
-     * @return int The number of times the widget is found in nested elements.
-     */
-    private function count_nested_widgets( $elements, $widget_name ) {
-        $count = 0;
-
-        foreach ( $elements as $element ) {
-            if ( isset( $element['widgetType'] ) && $element['widgetType'] === $widget_name ) {
-                $count++;
-            }
-
-            if ( isset( $element['elements'] ) && is_array( $element['elements'] ) ) {
-                $count += $this->count_nested_widgets( $element['elements'], $widget_name );
-            }
-        }
-
-        return $count;
+        return $results ? $results : [];
     }
 }
 
 /**
- * Adds a menu item for the settings page.
+ * Adds a top-level admin menu page for Widget Finder.
  * 
- * @since  1.0.0
- * @return void
+ * @since 1.0.0
  */
-function elementor_widget_usage_tracker_menu() {
+function wut_add_top_level_menu() {
     add_menu_page(
-        esc_html__( 'Widget Usage Tracker for Elementor', 'widget-usage-tracker-for-elementor' ),
-        esc_html__( 'Widget Usage', 'widget-usage-tracker-for-elementor' ),
+        esc_html__( 'Widget Finder', 'widget-usage-tracker-for-elementor' ),
+        esc_html__( 'Widget Finder', 'widget-usage-tracker-for-elementor' ),
         'manage_options',
-        'widget-usage-tracker-for-elementor',
-        'elementor_widget_usage_tracker_page',
-        'dashicons-search'
+        'widget-finder',
+        'wut_display_widget_finder_page',
+        'dashicons-search',
+        999
     );
 }
-add_action( 'admin_menu', 'elementor_widget_usage_tracker_menu' );
+add_action( 'admin_menu', 'wut_add_top_level_menu' );
 
 /**
- * Displays the settings page content.
+ * Displays the Widget Finder admin page content.
  * 
- * @since  1.0.0
- * @return void
+ * @since 1.0.0
  */
-function elementor_widget_usage_tracker_page() {
+function wut_display_widget_finder_page() {
     if ( ! class_exists( 'Elementor_Widget_Usage_List_Table' ) ) {
         return;
     }
 
-    $table = new Elementor_Widget_Usage_List_Table();
-    $table->prepare_items();
+    // Create an instance of the list table
+    $list_table = new Elementor_Widget_Usage_List_Table();
+    $list_table->prepare_items();
     ?>
     <div class="wrap">
         <h1>
-            <?php esc_html_e( 'Widget Usage Tracker for Elementor', 'widget-usage-tracker-for-elementor' ); ?>
+            <?php esc_html_e( 'Widget Finder', 'widget-usage-tracker-for-elementor' ); ?>
             <?php
                 echo ' <button id="wut-support" class="button" style="margin-left: 10px;"><span class="dashicons dashicons-format-chat"></span> ' . esc_html__( 'Support', 'widget-usage-tracker-for-elementor' ) . '</button>';
             ?>
         </h1>
         <form method="post">
-            <?php $table->display(); ?>
+            <?php $list_table->display(); ?>
         </form>
     </div>
 
+    <!-- Modal for displaying widget usage details -->
     <div id="usage-details-modal" style="display:none;">
         <div class="modal-content">
             <span class="close">&times;</span>
@@ -325,30 +280,37 @@ function elementor_widget_usage_tracker_page() {
 }
 
 /**
- * Enqueue JavaScript for the modal and AJAX functionality.
+ * Enqueue JavaScript and CSS for the modal and AJAX functionality.
  * 
- * @since  1.0.0
- * @return void
+ * @since 1.0.0
+ * @param string $hook The current admin page.
  */
-function elementor_widget_usage_tracker_scripts() {
+function wut_enqueue_admin_scripts( $hook ) {
+    // Check if we're on the Widget Finder admin page.
+    if ( 'toplevel_page_widget-finder' !== $hook ) {
+        return;
+    }
+
+    // Enqueue the CSS file.
     wp_enqueue_style( 'widget-usage-tracker-css', plugin_dir_url( __FILE__ ) . 'assets/css/wut-styles.css', [], WUT_VERSION );
-    // Enqueue the script.
+
+    // Enqueue the JavaScript file.
     wp_enqueue_script( 'widget-usage-tracker-js', plugin_dir_url( __FILE__ ) . 'assets/js/wut-scripts.js', [ 'jquery' ], WUT_VERSION, true );
-    // Localize the script.
+
+    // Localize the script with AJAX URL and nonce.
     wp_localize_script( 'widget-usage-tracker-js', 'WidgetUsageTracker', [
         'ajax_url' => admin_url( 'admin-ajax.php' ),
         'nonce'    => wp_create_nonce( 'widget_usage_tracker_nonce' ),
     ]);
 }
-add_action( 'admin_enqueue_scripts', 'elementor_widget_usage_tracker_scripts' );
+add_action( 'admin_enqueue_scripts', 'wut_enqueue_admin_scripts' );
 
 /**
  * AJAX callback to get pages where the widget is used.
- * 
- * @since  1.0.0
- * @return void
+ *
+ * @since 1.0.0
  */
-function elementor_widget_usage_tracker_ajax() {
+function wut_ajax_get_widget_usage_details() {
     // Check the nonce for security.
     check_ajax_referer( 'widget_usage_tracker_nonce', 'nonce' );
 
@@ -356,55 +318,378 @@ function elementor_widget_usage_tracker_ajax() {
     $widget_name = sanitize_text_field( $_POST['widget_name'] );
 
     global $wpdb;
+    $posts_table = $wpdb->prefix . 'wut_widget_usage_posts';
 
-    // Fetch unique post IDs where the widget is used in published posts.
-    $results = $wpdb->get_col(
+    // Fetch post IDs where the widget is used.
+    $post_ids = $wpdb->get_col(
         $wpdb->prepare(
-            "SELECT DISTINCT pm.post_id FROM {$wpdb->prefix}postmeta pm
-             JOIN {$wpdb->prefix}posts p ON pm.post_id = p.ID
-             WHERE pm.meta_key = '_elementor_data' 
-             AND pm.meta_value LIKE %s
-             AND p.post_status = 'publish'",
-            '%' . $wpdb->esc_like( $widget_name ) . '%'
+            "SELECT post_id FROM $posts_table WHERE widget_name = %s",
+            $widget_name
         )
     );
 
-    // Debugging: Log the number of unique post IDs found.
-    error_log( 'Widget Usage Tracker: Found ' . count( $results ) . ' unique post IDs for widget "' . $widget_name . '"' );
-
+    // Initialize pages array.
     $pages = [];
 
-    // Iterate through the unique post_ids.
-    foreach ( $results as $post_id ) {
-        // Ensure post_id is an integer.
-        $post_id = intval( $post_id );
-        if ( $post_id <= 0 ) {
-            continue;
-        }
+    if ( ! empty( $post_ids ) ) {
+        // Define batch size.
+        $batch_size = 100; // Adjust as needed.
 
-        $page = get_post( $post_id );
-        if ( $page ) {
-            // Ensure the post is published.
-            if ( 'publish' !== $page->post_status ) {
-                continue;
+        // Total number of posts.
+        $total_posts = count( $post_ids );
+
+        // Calculate total number of batches.
+        $total_batches = ceil( $total_posts / $batch_size );
+
+        for ( $batch = 0; $batch < $total_batches; $batch++ ) {
+            // Slice the post_ids array for the current batch.
+            $batch_posts = array_slice( $post_ids, $batch * $batch_size, $batch_size );
+
+            // Fetch posts in bulk.
+            $posts = get_posts( [
+                'post__in'       => $batch_posts,
+                'post_type'      => 'any',
+                'post_status'    => 'publish',
+                'numberposts'    => -1,
+                'fields'         => 'ids', // Retrieve only IDs for performance.
+            ] );
+
+            foreach ( $posts as $post_id ) {
+                $pages[] = [
+                    'title' => get_the_title( $post_id ),
+                    'url'   => get_permalink( $post_id ),
+                ];
             }
 
-            $pages[] = [
-                'title' => get_the_title( $page ),
-                'url'   => get_permalink( $page ),
-            ];
-
-            // Debugging: Log each page added.
-            error_log( 'Widget Usage Tracker: Added post "' . $page->post_title . '" (ID: ' . $post_id . ')' );
+            // Optional: Clear memory.
+            unset( $batch_posts, $posts );
         }
     }
 
-    // Reindex the array to ensure it's a numerically indexed array.
-    $pages = array_values( $pages );
-
-    // Debugging: Log the final pages array.
-    error_log( 'Widget Usage Tracker: Sending ' . count( $pages ) . ' unique pages to frontend.' );
+    // Log the number of unique pages sent.
+    error_log( 'Widget Usage Tracker: Sending ' . count( $pages ) . ' unique pages to frontend for widget "' . $widget_name . '"' );
 
     wp_send_json_success( $pages );
 }
-add_action( 'wp_ajax_get_widget_usage_details', 'elementor_widget_usage_tracker_ajax' );
+add_action( 'wp_ajax_get_widget_usage_details', 'wut_ajax_get_widget_usage_details' );
+
+/**
+ * Schedule a cron event upon plugin activation and trigger it immediately.
+ *
+ * @since 1.0.0
+ */
+function wut_schedule_cron_event() {
+    if ( ! wp_next_scheduled( 'wut_update_widget_usage_counts' ) ) {
+        // Schedule the event to run hourly.
+        wp_schedule_event( time(), 'hourly', 'wut_update_widget_usage_counts' );
+    }
+
+    // Trigger the cron job immediately.
+    if ( function_exists( 'wut_update_widget_usage_counts' ) ) {
+        do_action( 'wut_update_widget_usage_counts' );
+    }
+}
+register_activation_hook( __FILE__, 'wut_schedule_cron_event' );
+
+/**
+ * Clear scheduled cron event upon plugin deactivation.
+ *
+ * @since 1.0.0
+ */
+function wut_clear_cron_event() {
+    $timestamp = wp_next_scheduled( 'wut_update_widget_usage_counts' );
+    if ( $timestamp ) {
+        wp_unschedule_event( $timestamp, 'wut_update_widget_usage_counts' );
+    }
+}
+register_deactivation_hook( __FILE__, 'wut_clear_cron_event' );
+
+/**
+ * Cron callback to update widget usage counts and per-post usage in custom tables.
+ *
+ * @since 1.0.0
+ */
+function wut_update_widget_usage_counts() {
+    global $wpdb;
+    $counts_table = $wpdb->prefix . 'wut_widget_usage_counts';
+    $posts_table  = $wpdb->prefix . 'wut_widget_usage_posts';
+
+    if ( ! did_action( 'elementor/loaded' ) ) {
+        return;
+    }
+
+    $widgets_manager = \Elementor\Plugin::instance()->widgets_manager;
+    $widgets         = $widgets_manager->get_widget_types();
+
+    foreach ( $widgets as $widget_name => $widget_instance ) {
+        // Calculate widget usage count and get post_ids.
+        $usage_data = wut_calculate_widget_usage( $widget_instance->get_name() );
+
+        // Update the counts table.
+        $wpdb->replace(
+            $counts_table,
+            [
+                'widget_name' => $widget_instance->get_name(),
+                'count'       => $usage_data['count'],
+            ],
+            [
+                '%s',
+                '%d',
+            ]
+        );
+
+        // Debugging: Log the usage data
+        error_log( 'Widget Usage Tracker: Widget "' . $widget_name . '" has count ' . $usage_data['count'] . ' and post_ids: ' . implode( ', ', $usage_data['post_ids'] ) );
+
+        // Update the posts table.
+        if ( ! empty( $usage_data['post_ids'] ) ) {
+            // First, delete existing entries for this widget.
+            $wpdb->delete(
+                $posts_table,
+                [ 'widget_name' => $widget_name ],
+                [ '%s' ]
+            );
+
+            // Prepare data for bulk insertion.
+            $values = [];
+            foreach ( $usage_data['post_ids'] as $post_id ) {
+                $values[] = $wpdb->prepare( "(%s, %d)", $widget_instance->get_name(), $post_id );
+            }
+
+            if ( ! empty( $values ) ) {
+                $sql = "INSERT INTO $posts_table (widget_name, post_id) VALUES " . implode( ', ', $values );
+                $wpdb->query( $sql );
+
+                // Debugging: Log the SQL query
+                error_log( 'Widget Usage Tracker: Executed SQL - ' . $sql );
+            }
+        }
+    }
+}
+add_action( 'wut_update_widget_usage_counts', 'wut_update_widget_usage_counts' );
+
+/**
+ * Calculates the total usage of a specific Elementor widget across all published posts.
+ * Returns both the count and the list of post_ids where the widget is used.
+ *
+ * @param string $widget_name The name of the widget to count.
+ * 
+ * @since 1.0.0
+ * @return array ['count' => int, 'post_ids' => array]
+ */
+function wut_calculate_widget_usage( $widget_name ) {
+    global $wpdb;
+
+    // Initialize count and post_ids.
+    $total_count = 0;
+    $post_ids    = [];
+
+    // Define batch size.
+    $batch_size = 100; // Adjust as needed.
+
+    // Get total number of posts to process.
+    $total_posts = $wpdb->get_var(
+        "SELECT COUNT(p.ID) FROM {$wpdb->prefix}posts p
+         JOIN {$wpdb->prefix}postmeta pm ON p.ID = pm.post_id
+         WHERE pm.meta_key = '_elementor_data' 
+         AND p.post_status = 'publish'"
+    );
+
+    // Calculate total number of batches.
+    $total_batches = ceil( $total_posts / $batch_size );
+
+    for ( $batch = 0; $batch < $total_batches; $batch++ ) {
+        // Fetch a batch of post IDs.
+        $post_ids_batch = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT p.ID FROM {$wpdb->prefix}posts p
+                 JOIN {$wpdb->prefix}postmeta pm ON p.ID = pm.post_id
+                 WHERE pm.meta_key = '_elementor_data' 
+                 AND p.post_status = 'publish'
+                 LIMIT %d OFFSET %d",
+                $batch_size,
+                $batch * $batch_size
+            )
+        );
+
+        foreach ( $post_ids_batch as $post_id ) {
+            $elementor_data = get_post_meta( $post_id, '_elementor_data', true );
+
+            if ( ! empty( $elementor_data ) ) {
+                $data = json_decode( $elementor_data, true );
+
+                if ( is_array( $data ) ) {
+                    foreach ( $data as $widget ) {
+                        if ( isset( $widget['widgetType'] ) && $widget['widgetType'] === $widget_name ) {
+                            $total_count++;
+                            $post_ids[] = $post_id;
+                        }
+
+                        // Recursively check for nested widgets (e.g., within sections or columns).
+                        if ( isset( $widget['elements'] ) && is_array( $widget['elements'] ) ) {
+                            $nested = wut_count_nested_widgets( $widget['elements'], $widget_name, $post_id );
+                            $total_count += $nested['count'];
+                            $post_ids = array_merge( $post_ids, $nested['post_ids'] );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Optional: Clear memory.
+        unset( $post_ids_batch );
+    }
+
+    // Remove duplicate post_ids.
+    $post_ids = array_unique( $post_ids );
+
+    // Debugging: Log the collected post IDs
+    error_log( 'Widget Usage Tracker: Widget "' . $widget_name . '" used in posts: ' . implode( ', ', $post_ids ) );
+
+    return [
+        'count'    => $total_count,
+        'post_ids' => $post_ids,
+    ];
+}
+
+/**
+ * Recursively counts widget instances in nested elements and collects post_ids.
+ *
+ * @param array  $elements    The nested elements to search.
+ * @param string $widget_name The name of the widget to count.
+ * @param int    $post_id     The ID of the post being processed.
+ *
+ * @return array ['count' => int, 'post_ids' => array]
+ */
+function wut_count_nested_widgets( $elements, $widget_name, $post_id ) {
+    $count    = 0;
+    $post_ids = [];
+
+    foreach ( $elements as $element ) {
+        if ( isset( $element['widgetType'] ) && $element['widgetType'] === $widget_name ) {
+            $count++;
+            $post_ids[] = $post_id; // Record the post ID when the widget is found
+        }
+
+        if ( isset( $element['elements'] ) && is_array( $element['elements'] ) ) {
+            $nested = wut_count_nested_widgets( $element['elements'], $widget_name, $post_id );
+            $count += $nested['count'];
+            $post_ids = array_merge( $post_ids, $nested['post_ids'] );
+        }
+    }
+
+    return [
+        'count'    => $count,
+        'post_ids' => $post_ids,
+    ];
+}
+
+/**
+ * Hook into post save to update widget usage counts and post associations.
+ *
+ * @param int $post_id The ID of the post being saved.
+ * 
+ * @since 1.0.0
+ */
+function wut_update_widget_usage_on_save( $post_id ) {
+    // Avoid recursion and unnecessary processing.
+    if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
+        return;
+    }
+
+    // Verify if Elementor data exists.
+    $elementor_data = get_post_meta( $post_id, '_elementor_data', true );
+    if ( empty( $elementor_data ) ) {
+        return;
+    }
+
+    $data = json_decode( $elementor_data, true );
+    if ( ! is_array( $data ) ) {
+        return;
+    }
+
+    // Get all widgets in the post.
+    $widgets = [];
+    foreach ( $data as $widget ) {
+        if ( isset( $widget['widgetType'] ) ) {
+            $widgets[] = $widget['widgetType'];
+
+            // Handle nested widgets.
+            if ( isset( $widget['elements'] ) && is_array( $widget['elements'] ) ) {
+                $widgets = array_merge( $widgets, wut_get_nested_widgets( $widget['elements'] ) );
+            }
+        }
+    }
+
+    // Count widgets.
+    $widget_counts = array_count_values( $widgets );
+
+    // Update custom tables.
+    global $wpdb;
+    $counts_table = $wpdb->prefix . 'wut_widget_usage_counts';
+    $posts_table  = $wpdb->prefix . 'wut_widget_usage_posts';
+
+    foreach ( $widget_counts as $widget_name => $count ) {
+        // Update the total count.
+        $wpdb->replace(
+            $counts_table,
+            [
+                'widget_name' => $widget_name,
+                'count'       => wut_get_total_usage_count( $widget_name ),
+            ],
+            [
+                '%s',
+                '%d',
+            ]
+        );
+
+        // Insert the post association.
+        // First, delete existing associations for this widget and post.
+        $wpdb->delete(
+            $posts_table,
+            [
+                'widget_name' => $widget_name,
+                'post_id'     => $post_id,
+            ],
+            [
+                '%s',
+                '%d',
+            ]
+        );
+
+        // Insert the new association.
+        $wpdb->insert(
+            $posts_table,
+            [
+                'widget_name' => $widget_name,
+                'post_id'     => $post_id,
+            ],
+            [
+                '%s',
+                '%d',
+            ]
+        );
+    }
+}
+add_action( 'save_post', 'wut_update_widget_usage_on_save' );
+
+/**
+ * Retrieves the total usage count for a widget by querying the posts table.
+ *
+ * @param string $widget_name The name of the widget.
+ * 
+ * @return int The total usage count.
+ */
+function wut_get_total_usage_count( $widget_name ) {
+    global $wpdb;
+    $posts_table = $wpdb->prefix . 'wut_widget_usage_posts';
+
+    $count = $wpdb->get_var(
+        $wpdb->prepare(
+            "SELECT COUNT(*) FROM $posts_table WHERE widget_name = %s",
+            $widget_name
+        )
+    );
+
+    return $count ? (int) $count : 0;
+}

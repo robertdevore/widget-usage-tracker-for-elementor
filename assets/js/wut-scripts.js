@@ -8,8 +8,9 @@ jQuery(document).ready(function ($) {
         // Show the modal before data is loaded.
         $('#usage-details-modal').show();
 
-        // Show a loading indicator (optional)
-        $('#usage-details-list').html('<li>Loading...</li>');
+        // Show a loading spinner.
+        $('#usage-details-list').html('<div class="loading-spinner"></div>');
+        $('#usage-header').text('Loading details for "' + widgetName + '"...');
 
         $.ajax({
             url: WidgetUsageTracker.ajax_url,
@@ -20,10 +21,8 @@ jQuery(document).ready(function ($) {
                 nonce: WidgetUsageTracker.nonce,
             },
             success: function (response) {
-                // Clear the loading indicator.
+                // Clear the loading spinner.
                 $('#usage-details-list').empty();
-
-                console.log('AJAX Response:', response); // Debugging
 
                 if (response.success) {
                     var list = $('#usage-details-list');
@@ -38,14 +37,11 @@ jQuery(document).ready(function ($) {
 
                     // Append each unique post to the list.
                     $.each(response.data, function (index, page) {
-                        console.log('Appending Post:', page.title, page.url); // Debugging
                         list.append('<li><a href="' + page.url + '" target="_blank">' + page.title + '</a></li>');
                     });
-
                 } else {
                     // Handle the case where no data is returned.
                     $('#usage-header').text('No usages found for the "' + widgetName + '" widget.');
-                    $('#usage-details-list').empty();
                 }
             },
             error: function () {
