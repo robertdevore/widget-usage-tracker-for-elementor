@@ -24,3 +24,12 @@
     right: 10px;
     cursor: pointer;
 }
+
+#e-admin-top-bar-root.e-admin-top-bar--active~#wpbody .wrap h1 {
+    display: block !important;
+}
+
+#wut-support {
+    float: right;
+    line-height: 22px;
+}

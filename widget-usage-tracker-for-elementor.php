@@ -1,32 +1,72 @@
 <?php
 
- /**
-  * The plugin bootstrap file
-  *
-  * @link              https://robertdevore.com
-  * @since             1.0.0
-  * @package           Widget_Usage_Tracker_For_Elementor
-  *
-  * @wordpress-plugin
-  *
-  * Plugin Name: Widget Usage Tracker for Elementor
-  * Description: Displays all registered Elementor widgets and their usage count on the site, with a modal that shows links to the content where the widgets are found.
-  * Plugin URI:  https://github.com/robertdevore/widget-usage-tracker-for-elementor/
-  * Version:     1.0.0
-  * Author:      Robert DeVore
-  * Author URI:  https://robertdevore.com/
-  * License:     GPL-2.0+
-  * License URI: http://www.gnu.org/licenses/gpl-2.0.txt
-  * Text Domain: widget-usage-tracker-for-elementor
-  * Domain Path: /languages
-  * Update URI:  https://github.com/robertdevore/widget-usage-tracker-for-elementor/
-  */
+/**
+ * The plugin bootstrap file
+ *
+ * @link              https://robertdevore.com
+ * @since             1.0.0
+ * @package           Widget_Usage_Tracker_For_Elementor
+ *
+ * @wordpress-plugin
+ *
+ * Plugin Name: Widget Usage Tracker for Elementor
+ * Description: Displays all registered Elementor widgets and their usage count on the site, with a modal that shows links to the content where the widgets are found.
+ * Plugin URI:  https://github.com/robertdevore/widget-usage-tracker-for-elementor/
+ * Version:     1.0.0
+ * Author:      Robert DeVore
+ * Author URI:  https://robertdevore.com/
+ * License:     GPL-2.0+
+ * License URI: http://www.gnu.org/licenses/gpl-2.0.txt
+ * Text Domain: widget-usage-tracker-for-elementor
+ * Domain Path: /languages
+ * Update URI:  https://github.com/robertdevore/widget-usage-tracker-for-elementor/
+ */
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+/**
+ * Dependency Check: Ensure Elementor or Elementor Pro is active.
+ */
+function wut_check_elementor_dependency() {
+    // Check if Elementor or Elementor Pro is active by verifying if their main classes exist.
+    if ( ! class_exists( 'Elementor\Plugin' ) && ! class_exists( 'ElementorPro\Plugin' ) ) {
+
+        // Include the plugin.php file to access deactivate_plugins() function.
+        if ( ! function_exists( 'deactivate_plugins' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        // Deactivate the plugin.
+        deactivate_plugins( plugin_basename( __FILE__ ) );
+
+        // If the user can activate plugins, display an admin notice.
+        if ( current_user_can( 'activate_plugins' ) ) {
+            add_action( 'admin_notices', 'wut_elementor_dependency_notice' );
+        }
+
+        return;
+    }
+}
+add_action( 'plugins_loaded', 'wut_check_elementor_dependency' );
+
+/**
+ * Admin Notice for Missing Elementor Dependency.
+ * 
+ * @since  1.0.0
+ * @return void
+ */
+function wut_elementor_dependency_notice() {
+    ?>
+    <div class="notice notice-error is-dismissible">
+        <p><?php esc_html_e( 'Widget Usage Tracker for Elementor requires Elementor or Elementor Pro to be installed and active. The plugin has been deactivated.', 'widget-usage-tracker-for-elementor' ); ?></p>
+    </div>
+    <?php
+}
+
+// Plugin Update Checker.
 require 'vendor/plugin-update-checker/plugin-update-checker.php';
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
@@ -42,7 +82,7 @@ $myUpdateChecker->setBranch( 'main' );
 // Set the current version.
 define( 'WUT_VERSION', '1.0.0' );
 
-// Include WP_List_Table if it doesn't already already exist.
+// Include WP_List_Table if it doesn't already exist.
 if ( ! class_exists( 'WP_List_Table' ) ) {
     require_once ABSPATH . 'wp-admin/includes/class-wp-list-table.php';
 }
@@ -158,22 +198,74 @@ class Elementor_Widget_Usage_List_Table extends WP_List_Table {
     }
 
     /**
-     * Counts the usage of a specific Elementor widget across the site.
+     * Counts the total usage of a specific Elementor widget across all published posts.
      *
      * @param string $widget_name The name of the widget to count.
      * 
      * @since  1.0.0
-     * @return int The number of times the widget is used.
+     * @return int The total number of times the widget is used.
      */
     private function count_widget_usage( $widget_name ) {
         global $wpdb;
-        $count = $wpdb->get_var(
+
+        // Fetch all published post IDs that have Elementor data.
+        $post_ids = $wpdb->get_col(
             $wpdb->prepare(
-                "SELECT COUNT(*) FROM {$wpdb->prefix}postmeta WHERE meta_key = '_elementor_data' AND meta_value LIKE %s",
-                '%' . $wpdb->esc_like( $widget_name ) . '%'
+                "SELECT p.ID FROM {$wpdb->prefix}posts p
+                 JOIN {$wpdb->prefix}postmeta pm ON p.ID = pm.post_id
+                 WHERE pm.meta_key = '_elementor_data' 
+                 AND p.post_status = 'publish'"
             )
         );
-        return $count ? (int) $count : 0;
+
+        $total_count = 0;
+
+        foreach ( $post_ids as $post_id ) {
+            $elementor_data = get_post_meta( $post_id, '_elementor_data', true );
+
+            if ( ! empty( $elementor_data ) ) {
+                $data = json_decode( $elementor_data, true );
+
+                if ( is_array( $data ) ) {
+                    foreach ( $data as $widget ) {
+                        if ( isset( $widget['widgetType'] ) && $widget['widgetType'] === $widget_name ) {
+                            $total_count++;
+                        }
+
+                        // Recursively check for nested widgets (e.g., within sections or columns).
+                        if ( isset( $widget['elements'] ) && is_array( $widget['elements'] ) ) {
+                            $total_count += $this->count_nested_widgets( $widget['elements'], $widget_name );
+                        }
+                    }
+                }
+            }
+        }
+
+        return $total_count;
+    }
+
+    /**
+     * Recursively counts widget instances in nested elements.
+     *
+     * @param array  $elements    The nested elements to search.
+     * @param string $widget_name The name of the widget to count.
+     *
+     * @return int The number of times the widget is found in nested elements.
+     */
+    private function count_nested_widgets( $elements, $widget_name ) {
+        $count = 0;
+
+        foreach ( $elements as $element ) {
+            if ( isset( $element['widgetType'] ) && $element['widgetType'] === $widget_name ) {
+                $count++;
+            }
+
+            if ( isset( $element['elements'] ) && is_array( $element['elements'] ) ) {
+                $count += $this->count_nested_widgets( $element['elements'], $widget_name );
+            }
+        }
+
+        return $count;
     }
 }
 
@@ -189,7 +281,8 @@ function elementor_widget_usage_tracker_menu() {
         esc_html__( 'Widget Usage', 'widget-usage-tracker-for-elementor' ),
         'manage_options',
         'widget-usage-tracker-for-elementor',
-        'elementor_widget_usage_tracker_page'
+        'elementor_widget_usage_tracker_page',
+        'dashicons-search'
     );
 }
 add_action( 'admin_menu', 'elementor_widget_usage_tracker_menu' );
@@ -209,7 +302,12 @@ function elementor_widget_usage_tracker_page() {
     $table->prepare_items();
     ?>
     <div class="wrap">
-        <h1><?php esc_html_e( 'Widget Usage Tracker for Elementor', 'widget-usage-tracker-for-elementor' ); ?></h1>
+        <h1>
+            <?php esc_html_e( 'Widget Usage Tracker for Elementor', 'widget-usage-tracker-for-elementor' ); ?>
+            <?php
+                echo ' <button id="wut-support" class="button" style="margin-left: 10px;"><span class="dashicons dashicons-format-chat"></span> ' . esc_html__( 'Support', 'widget-usage-tracker-for-elementor' ) . '</button>';
+            ?>
+        </h1>
         <form method="post">
             <?php $table->display(); ?>
         </form>
@@ -251,33 +349,61 @@ add_action( 'admin_enqueue_scripts', 'elementor_widget_usage_tracker_scripts' );
  * @return void
  */
 function elementor_widget_usage_tracker_ajax() {
-    // Check the nonce.
+    // Check the nonce for security.
     check_ajax_referer( 'widget_usage_tracker_nonce', 'nonce' );
 
+    // Sanitize the widget name received from the AJAX request.
     $widget_name = sanitize_text_field( $_POST['widget_name'] );
 
     global $wpdb;
 
-    // Get the results from the DB.
-    $results = $wpdb->get_results(
+    // Fetch unique post IDs where the widget is used in published posts.
+    $results = $wpdb->get_col(
         $wpdb->prepare(
-            "SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_elementor_data' AND meta_value LIKE %s",
+            "SELECT DISTINCT pm.post_id FROM {$wpdb->prefix}postmeta pm
+             JOIN {$wpdb->prefix}posts p ON pm.post_id = p.ID
+             WHERE pm.meta_key = '_elementor_data' 
+             AND pm.meta_value LIKE %s
+             AND p.post_status = 'publish'",
             '%' . $wpdb->esc_like( $widget_name ) . '%'
         )
     );
 
+    // Debugging: Log the number of unique post IDs found.
+    error_log( 'Widget Usage Tracker: Found ' . count( $results ) . ' unique post IDs for widget "' . $widget_name . '"' );
+
     $pages = [];
 
-    // Loop through the results.
-    foreach ( $results as $result ) {
-        $page = get_post( $result->post_id );
+    // Iterate through the unique post_ids.
+    foreach ( $results as $post_id ) {
+        // Ensure post_id is an integer.
+        $post_id = intval( $post_id );
+        if ( $post_id <= 0 ) {
+            continue;
+        }
+
+        $page = get_post( $post_id );
         if ( $page ) {
+            // Ensure the post is published.
+            if ( 'publish' !== $page->post_status ) {
+                continue;
+            }
+
             $pages[] = [
                 'title' => get_the_title( $page ),
                 'url'   => get_permalink( $page ),
             ];
+
+            // Debugging: Log each page added.
+            error_log( 'Widget Usage Tracker: Added post "' . $page->post_title . '" (ID: ' . $post_id . ')' );
         }
     }
+
+    // Reindex the array to ensure it's a numerically indexed array.
+    $pages = array_values( $pages );
+
+    // Debugging: Log the final pages array.
+    error_log( 'Widget Usage Tracker: Sending ' . count( $pages ) . ' unique pages to frontend.' );
 
     wp_send_json_success( $pages );
 }

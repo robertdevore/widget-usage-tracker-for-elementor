@@ -6,6 +6,7 @@
 
 - [Features](#features)
 - [Installation](#installation)
+- [Dependencies](#dependencies)
 - [Usage](#usage)
 - [Frequently Asked Questions](#frequently-asked-questions)
 - [Contributing](#contributing)
@@ -26,6 +27,32 @@
 
 - **WordPress:** Version 5.0 or higher.
 - **Elementor:** Version 2.0 or higher.
+
+## Dependencies
+
+**Widget Usage Tracker for Elementor** requires either **Elementor** or **Elementor Pro** to be installed and active on your WordPress site. If neither is active, the plugin will automatically deactivate and display an admin notice informing you of the missing dependencies.
+
+### Installing Elementor
+
+1. **Via WordPress Admin Dashboard:**
+   - Navigate to **Plugins > Add New**.
+   - Search for **Elementor**.
+   - Click **Install Now** and then **Activate**.
+
+2. **Manually:**
+   - Download the plugin from the [Elementor website](https://elementor.com/).
+   - Upload it to your `/wp-content/plugins/` directory.
+   - Activate it through the **Plugins** menu in WordPress.
+
+### Installing Elementor Pro (Optional)
+
+If you prefer to use **Elementor Pro** for additional features:
+
+1. Purchase **Elementor Pro** from the [official website](https://elementor.com/pro/).
+2. Download the **Elementor Pro** plugin.
+3. Upload it to your `/wp-content/plugins/` directory.
+4. Activate it through the **Plugins** menu in WordPress.
+5. Enter your license key to receive updates and support.
 
 ### Steps
 
