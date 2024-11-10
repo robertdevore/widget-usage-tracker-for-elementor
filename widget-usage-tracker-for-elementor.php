@@ -12,7 +12,7 @@
  * Plugin Name: Widget Usage Tracker for Elementor
  * Description: Displays all registered Elementor widgets and their usage count on the site, with a modal that shows links to the content where the widgets are found.
  * Plugin URI:  https://github.com/robertdevore/widget-usage-tracker-for-elementor/
- * Version:     1.0.0
+ * Version:     1.0.1
  * Author:      Robert DeVore
  * Author URI:  https://robertdevore.com/
  * License:     GPL-2.0+
@@ -69,6 +69,9 @@ function wut_elementor_dependency_notice() {
     <?php
 }
 
+// Set the current version.
+define( 'WUT_VERSION', '1.0.1' );
+
 /**
  * Create custom tables to store widget usage data.
  * 
@@ -122,9 +125,6 @@ $myUpdateChecker = PucFactory::buildUpdateChecker(
 
 // Set the branch that contains the stable release.
 $myUpdateChecker->setBranch( 'main' );
-
-// Set the current version.
-define( 'WUT_VERSION', '1.0.0' );
 
 // Include WP_List_Table if it doesn't already exist.
 if ( ! class_exists( 'WP_List_Table' ) ) {
