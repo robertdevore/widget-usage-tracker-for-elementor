@@ -272,7 +272,7 @@ function wut_display_widget_finder_page() {
         <h1>
             <?php esc_html_e( 'Widget Usage Tracker for Elementor', 'widget-usage-tracker-for-elementor' ); ?>
             <?php
-                echo ' <button id="wut-support" class="button" style="margin-left: 10px;"><span class="dashicons dashicons-format-chat"></span> ' . esc_html__( 'Support', 'widget-usage-tracker-for-elementor' ) . '</button>';
+                echo ' <a id="wut-support" class="button" style="margin-left: 10px;" href="https://robertdevore.com/contact/" target="_blank"><span class="dashicons dashicons-format-chat"></span> <span class="wut-support-text">' . esc_html__( 'Support', 'widget-usage-tracker-for-elementor' ) . '</span></a>';
             ?>
         </h1>
         <form method="post">
